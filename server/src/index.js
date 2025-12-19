@@ -20,13 +20,23 @@ const storage = multer.diskStorage({
   }
 });
 
+// Flexible upload - accept multiple file types
 const upload = multer({ 
   storage,
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') {
+    const allowedTypes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg', 
+      'image/png',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF files are allowed'));
+      cb(new Error(`File type ${file.mimetype} is not supported`));
     }
   }
 });
