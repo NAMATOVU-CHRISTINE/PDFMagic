@@ -1,9 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import fs from 'fs/promises';
 import path from 'path';
+import mammoth from 'mammoth';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -193,7 +194,7 @@ app.post('/api/rotate', upload.single('pdf'), async (req, res) => {
   }
 });
 
-// Word to PDF conversion
+// Word to PDF conversion with mammoth
 app.post('/api/word-to-pdf', upload.single('document'), async (req, res) => {
   try {
     const file = req.file;
@@ -201,36 +202,63 @@ app.post('/api/word-to-pdf', upload.single('document'), async (req, res) => {
       return res.status(400).json({ error: 'Word document is required' });
     }
 
-    // For now, create a simple PDF with the document name
-    // In a real implementation, you'd use libraries like mammoth + puppeteer
+    // Extract text from Word document using mammoth
+    const result = await mammoth.extractRawText({ path: file.path });
+    const text = result.value;
+
+    // Create PDF with extracted text
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([612, 792]);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontSize = 12;
+    const margin = 50;
+    const pageWidth = 612;
+    const pageHeight = 792;
+    const maxWidth = pageWidth - (margin * 2);
     
-    // Add some basic text indicating conversion
-    const { width, height } = page.getSize();
-    page.drawText(`Converted from: ${file.originalname}`, {
-      x: 50,
-      y: height - 100,
-      size: 16,
-    });
+    let page = pdfDoc.addPage([pageWidth, pageHeight]);
+    let yPosition = pageHeight - margin;
+
+    // Split text into lines that fit the page width
+    const words = text.split(/\s+/);
+    let currentLine = '';
     
-    page.drawText('This is a basic conversion implementation.', {
-      x: 50,
-      y: height - 130,
-      size: 12,
-    });
+    for (const word of words) {
+      const testLine = currentLine + (currentLine ? ' ' : '') + word;
+      const textWidth = font.widthOfTextAtSize(testLine, fontSize);
+      
+      if (textWidth > maxWidth && currentLine) {
+        // Draw current line
+        page.drawText(currentLine, {
+          x: margin,
+          y: yPosition,
+          size: fontSize,
+          font: font,
+          color: rgb(0, 0, 0),
+        });
+        
+        yPosition -= fontSize + 4;
+        currentLine = word;
+        
+        // Check if we need a new page
+        if (yPosition < margin) {
+          page = pdfDoc.addPage([pageWidth, pageHeight]);
+          yPosition = pageHeight - margin;
+        }
+      } else {
+        currentLine = testLine;
+      }
+    }
     
-    page.drawText('For full Word to PDF conversion, additional', {
-      x: 50,
-      y: height - 160,
-      size: 12,
-    });
-    
-    page.drawText('libraries and processing would be needed.', {
-      x: 50,
-      y: height - 180,
-      size: 12,
-    });
+    // Draw remaining text
+    if (currentLine) {
+      page.drawText(currentLine, {
+        x: margin,
+        y: yPosition,
+        size: fontSize,
+        font: font,
+        color: rgb(0, 0, 0),
+      });
+    }
 
     const pdfBytes = await pdfDoc.save();
     const outputPath = `uploads/converted-${Date.now()}.pdf`;
