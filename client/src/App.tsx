@@ -66,25 +66,24 @@ function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
-      {/* Animated Background Blobs */}
-      <div className="fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute top-10 left-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
-        <div className="absolute top-20 right-10 w-72 h-72 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000"></div>
-        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
-      </div>
-
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md shadow-sm border-b border-white/20 sticky top-0 z-50">
+      <header className="bg-white shadow-sm border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
-              <div className="bg-gradient-to-r from-red-500 to-pink-500 p-2 rounded-lg">
-                <FileText className="h-6 w-6 text-white" />
+              <div className="flex items-center">
+                <span className="text-2xl font-bold">I</span>
+                <span className="text-2xl text-red-500">❤️</span>
+                <span className="text-2xl font-bold">PDF</span>
               </div>
-              <h1 className="ml-3 text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">PDF Tools</h1>
             </div>
-            <p className="text-sm text-gray-600 font-medium">Free Online PDF Editor</p>
+            <div className="flex items-center space-x-4">
+              <button className="text-gray-700 hover:text-gray-900 font-medium">Login</button>
+              <button className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors font-medium">
+                Sign up
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -92,18 +91,36 @@ function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!selectedTool ? (
           <>
-            {/* Hero Section */}
-            <div className="text-center mb-12 animate-fadeInUp">
-              <h2 className="text-5xl font-bold text-gray-900 mb-4">
-                Every tool you need to work with{' '}
-                <span className="bg-gradient-to-r from-red-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
-                  PDFs
-                </span>{' '}
-                in one place
+            {/* Personalized Greeting */}
+            <div className="text-center mb-8 animate-fadeInUp">
+              <h2 className="text-3xl font-bold text-gray-900 mb-6">
+                Hi Christine Namatovu, let's get started
               </h2>
-              <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-                Free and easy to use online PDF tools to merge, split, compress, and convert PDF files.
-              </p>
+              
+              {/* Category Tabs */}
+              <div className="flex flex-wrap justify-center gap-3 mb-8">
+                <button className="px-6 py-2 bg-gray-900 text-white rounded-full font-medium hover:bg-gray-800 transition-colors">
+                  All
+                </button>
+                <button className="px-6 py-2 bg-white text-gray-700 rounded-full font-medium hover:bg-gray-100 transition-colors border border-gray-200">
+                  Workflows
+                </button>
+                <button className="px-6 py-2 bg-white text-gray-700 rounded-full font-medium hover:bg-gray-100 transition-colors border border-gray-200">
+                  Organize PDF
+                </button>
+                <button className="px-6 py-2 bg-white text-gray-700 rounded-full font-medium hover:bg-gray-100 transition-colors border border-gray-200">
+                  Optimize PDF
+                </button>
+                <button className="px-6 py-2 bg-white text-gray-700 rounded-full font-medium hover:bg-gray-100 transition-colors border border-gray-200">
+                  Convert PDF
+                </button>
+                <button className="px-6 py-2 bg-white text-gray-700 rounded-full font-medium hover:bg-gray-100 transition-colors border border-gray-200">
+                  Edit PDF
+                </button>
+                <button className="px-6 py-2 bg-white text-gray-700 rounded-full font-medium hover:bg-gray-100 transition-colors border border-gray-200">
+                  PDF Security
+                </button>
+              </div>
             </div>
 
             {/* Tools Grid */}
@@ -112,17 +129,17 @@ function App() {
                 <div 
                   key={tool.id}
                   className="animate-fadeInUp"
-                  style={{ animationDelay: `${index * 100}ms` }}
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <div 
                     onClick={() => setSelectedTool(tool.id)}
-                    className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 cursor-pointer p-6 border border-white/20"
+                    className="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer p-6 border border-gray-100"
                   >
-                    <div className={`w-14 h-14 ${tool.color} rounded-xl flex items-center justify-center mb-4 shadow-lg`}>
-                      <tool.icon className="h-7 w-7 text-white" />
+                    <div className={`w-16 h-16 ${tool.color} rounded-lg flex items-center justify-center mb-4`}>
+                      <tool.icon className="h-8 w-8 text-white" />
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">{tool.title}</h3>
-                    <p className="text-gray-600 text-sm">{tool.description}</p>
+                    <p className="text-gray-600 text-sm leading-relaxed">{tool.description}</p>
                   </div>
                 </div>
               ))}
@@ -145,11 +162,10 @@ function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white/80 backdrop-blur-md border-t border-white/20 mt-16">
+      <footer className="bg-white border-t mt-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center text-gray-600">
-            <p className="font-medium">&copy; {new Date().getFullYear()} PDF Tools. Free online PDF editor.</p>
-            <p className="text-sm mt-2">Made with ❤️ by NAMATOVU-CHRISTINE</p>
+            <p className="text-sm">&copy; {new Date().getFullYear()} PDF Tools. Free online PDF editor.</p>
           </div>
         </div>
       </footer>
