@@ -72,10 +72,11 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
-              <div className="flex items-center">
-                <span className="text-2xl font-bold">I</span>
-                <span className="text-2xl text-red-500">❤️</span>
-                <span className="text-2xl font-bold">PDF</span>
+              <div className="flex items-center space-x-2">
+                <div className="bg-gradient-to-r from-red-500 to-pink-500 p-2 rounded-lg">
+                  <FileText className="h-6 w-6 text-white" />
+                </div>
+                <span className="text-2xl font-bold text-gray-900">PDF Magic</span>
               </div>
             </div>
             <div className="flex items-center space-x-4">
