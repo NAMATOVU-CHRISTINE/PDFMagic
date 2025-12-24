@@ -127,7 +127,7 @@ function App() {
             {/* Personalized Greeting */}
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-gray-900 mb-6">
-                Hi Christine Namatovu, let's get started
+                Hello! Let's work with PDFs
               </h2>
 
               {/* Category Tabs */}
