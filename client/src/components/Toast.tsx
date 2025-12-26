@@ -16,7 +16,6 @@ const Toast: React.FC<ToastProps> = ({
   type, 
   onClose, 
   duration = 5000,
-  darkMode = false 
 }) => {
   useEffect(() => {
     if (duration > 0) {

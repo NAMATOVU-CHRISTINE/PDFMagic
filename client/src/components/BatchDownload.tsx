@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Download, Package, Loader } from 'lucide-react';
+import { useState } from 'react';
+import { Package, Loader } from 'lucide-react';
 import axios from 'axios';
 
 interface BatchDownloadProps {
@@ -7,7 +7,7 @@ interface BatchDownloadProps {
   darkMode?: boolean;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || '';
 
 const BatchDownload: React.FC<BatchDownloadProps> = ({ files, darkMode = false }) => {
   const [isDownloading, setIsDownloading] = useState(false);

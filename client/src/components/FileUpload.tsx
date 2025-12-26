@@ -5,13 +5,13 @@ import axios from 'axios';
 
 interface FileUploadProps {
   toolType: string;
-  onBack: () => void;
+  onBack?: () => void;
   darkMode?: boolean;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || '';
 
-const FileUpload: React.FC<FileUploadProps> = ({ toolType, onBack, darkMode = false }) => {
+const FileUpload: React.FC<FileUploadProps> = ({ toolType, darkMode = false }) => {
   const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -34,7 +34,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ toolType, onBack, darkMode = fa
     setResult(null);
   }, []);
 
-  const getAcceptedFiles = () => {
+  const getAcceptedFiles = (): Record<string, string[]> => {
     switch (toolType) {
       case 'jpg-to-pdf':
         return { 'image/jpeg': ['.jpg', '.jpeg'], 'image/png': ['.png'] };

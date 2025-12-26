@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Trash2, X } from 'lucide-react';
+import { Clock, X } from 'lucide-react';
 import { RecentFile } from '../types/api';
 import { formatFileSize } from '../utils/fileSize';
 
