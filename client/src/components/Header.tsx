@@ -1,44 +1,64 @@
 import React from 'react';
-import { FileText, Github, Star } from 'lucide-react';
-import { APP_CONFIG } from '../config/constants';
+import { FileText, Moon, Sun } from 'lucide-react';
 
-const Header: React.FC = () => {
+interface HeaderProps {
+  darkMode: boolean;
+  onToggleDarkMode: () => void;
+  onLogoClick: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ darkMode, onToggleDarkMode, onLogoClick }) => {
   return (
-    <header className="bg-white shadow-sm border-b sticky top-0 z-40">
+    <header
+      className={`shadow-sm border-b sticky top-0 z-50 ${
+        darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      }`}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
-            <FileText className="h-8 w-8 text-red-500" />
-            <div className="ml-2">
-              <h1 className="text-xl font-bold text-gray-900">{APP_CONFIG.name}</h1>
-              <p className="text-xs text-gray-500 hidden sm:block">{APP_CONFIG.description}</p>
-            </div>
+            <button
+              onClick={onLogoClick}
+              className="flex items-center space-x-2 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-1"
+              aria-label="Go to home"
+            >
+              <div className="bg-gradient-to-r from-red-500 to-pink-500 p-2 rounded-lg">
+                <FileText className="h-6 w-6 text-white" aria-hidden="true" />
+              </div>
+              <span className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                PDF Magic
+              </span>
+            </button>
           </div>
           
           <div className="flex items-center space-x-4">
-            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded hidden sm:inline">
-              v{APP_CONFIG.version}
-            </span>
-            
-            <a
-              href={APP_CONFIG.repository}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center space-x-1 text-gray-600 hover:text-gray-900 transition-colors"
+            <button
+              onClick={onToggleDarkMode}
+              className={`p-2 rounded-lg transition-colors ${
+                darkMode
+                  ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
-              <Github className="h-5 w-5" />
-              <span className="hidden sm:inline text-sm">GitHub</span>
-            </a>
+              {darkMode ? (
+                <Sun className="h-5 w-5" aria-hidden="true" />
+              ) : (
+                <Moon className="h-5 w-5" aria-hidden="true" />
+              )}
+            </button>
             
-            <a
-              href={`${APP_CONFIG.repository}/stargazers`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full transition-colors"
+            <button
+              className={`font-medium ${
+                darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900'
+              }`}
             >
-              <Star className="h-4 w-4 text-yellow-500" />
-              <span className="text-sm font-medium">Star</span>
-            </a>
+              Login
+            </button>
+            
+            <button className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors font-medium">
+              Sign up
+            </button>
           </div>
         </div>
       </div>
