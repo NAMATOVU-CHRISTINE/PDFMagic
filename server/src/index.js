@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import fs from 'fs/promises';
 import path from 'path';
 import mammoth from 'mammoth';
@@ -9,11 +9,44 @@ import mammoth from 'mammoth';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// File size limits
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILES = 20;
+
+// Simple in-memory rate limiting
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 30; // 30 requests per minute
+
+const rateLimit = (req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  
+  if (!rateLimitMap.has(ip)) {
+    rateLimitMap.set(ip, { count: 1, startTime: now });
+    return next();
+  }
+  
+  const record = rateLimitMap.get(ip);
+  if (now - record.startTime > RATE_LIMIT_WINDOW) {
+    rateLimitMap.set(ip, { count: 1, startTime: now });
+    return next();
+  }
+  
+  if (record.count >= RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
+  
+  record.count++;
+  next();
+};
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/api', rateLimit);
 
-// Configure multer for file uploads
+// Configure multer for file uploads with size validation
 const storage = multer.diskStorage({
   destination: 'uploads/',
   filename: (req, file, cb) => {
@@ -21,9 +54,12 @@ const storage = multer.diskStorage({
   }
 });
 
-// Flexible upload - accept multiple file types
 const upload = multer({ 
   storage,
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+    files: MAX_FILES
+  },
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'application/pdf',
@@ -42,12 +78,37 @@ const upload = multer({
   }
 });
 
+// Error handling middleware
+const errorHandler = (err, req, res, next) => {
+  console.error('Error:', err.message);
+  
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: `File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB` });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({ error: `Too many files. Maximum is ${MAX_FILES} files` });
+    }
+  }
+  
+  res.status(500).json({ error: err.message || 'An unexpected error occurred' });
+};
+
 // Ensure uploads directory exists
 try {
   await fs.mkdir('uploads', { recursive: true });
 } catch (error) {
   console.log('Uploads directory already exists');
 }
+
+// Helper to clean up files
+const cleanupFiles = async (...paths) => {
+  for (const p of paths) {
+    try {
+      if (p) await fs.unlink(p);
+    } catch (e) {}
+  }
+};
 
 // Routes
 app.get('/api/health', (req, res) => {
@@ -56,9 +117,9 @@ app.get('/api/health', (req, res) => {
 
 // Merge PDFs
 app.post('/api/merge', upload.array('pdfs'), async (req, res) => {
+  const files = req.files || [];
   try {
-    const files = req.files;
-    if (!files || files.length < 2) {
+    if (files.length < 2) {
       return res.status(400).json({ error: 'At least 2 PDF files are required' });
     }
 
@@ -69,20 +130,19 @@ app.post('/api/merge', upload.array('pdfs'), async (req, res) => {
       const pdf = await PDFDocument.load(pdfBytes);
       const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
       copiedPages.forEach((page) => mergedPdf.addPage(page));
-      
-      // Clean up uploaded file
-      await fs.unlink(file.path);
     }
 
     const pdfBytes = await mergedPdf.save();
     const outputPath = `uploads/merged-${Date.now()}.pdf`;
     await fs.writeFile(outputPath, pdfBytes);
 
+    await cleanupFiles(...files.map(f => f.path));
+
     res.download(outputPath, 'merged.pdf', async () => {
-      // Clean up output file after download
-      await fs.unlink(outputPath);
+      await cleanupFiles(outputPath);
     });
   } catch (error) {
+    await cleanupFiles(...files.map(f => f.path));
     console.error('Merge error:', error);
     res.status(500).json({ error: 'Failed to merge PDFs' });
   }
@@ -90,8 +150,8 @@ app.post('/api/merge', upload.array('pdfs'), async (req, res) => {
 
 // Split PDF
 app.post('/api/split', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
   try {
-    const file = req.file;
     if (!file) {
       return res.status(400).json({ error: 'PDF file is required' });
     }
@@ -113,23 +173,23 @@ app.post('/api/split', upload.single('pdf'), async (req, res) => {
       splitPdfs.push(outputPath);
     }
 
-    // Clean up uploaded file
-    await fs.unlink(file.path);
+    await cleanupFiles(file.path);
 
     res.json({ 
       message: `PDF split into ${pageCount} pages`,
-      files: splitPdfs.map(path => `/api/download/${path.split('/')[1]}`)
+      files: splitPdfs.map(p => `/api/download/${p.split('/')[1]}`)
     });
   } catch (error) {
+    await cleanupFiles(file?.path);
     console.error('Split error:', error);
     res.status(500).json({ error: 'Failed to split PDF' });
   }
 });
 
-// Compress PDF (basic implementation)
+// Compress PDF
 app.post('/api/compress', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
   try {
-    const file = req.file;
     if (!file) {
       return res.status(400).json({ error: 'PDF file is required' });
     }
@@ -137,23 +197,20 @@ app.post('/api/compress', upload.single('pdf'), async (req, res) => {
     const pdfBytes = await fs.readFile(file.path);
     const pdf = await PDFDocument.load(pdfBytes);
     
-    // Basic compression by re-saving the PDF
     const compressedBytes = await pdf.save({
-      useObjectStreams: false,
+      useObjectStreams: true,
       addDefaultPage: false
     });
 
     const outputPath = `uploads/compressed-${Date.now()}.pdf`;
     await fs.writeFile(outputPath, compressedBytes);
-
-    // Clean up uploaded file
-    await fs.unlink(file.path);
+    await cleanupFiles(file.path);
 
     res.download(outputPath, 'compressed.pdf', async () => {
-      // Clean up output file after download
-      await fs.unlink(outputPath);
+      await cleanupFiles(outputPath);
     });
   } catch (error) {
+    await cleanupFiles(file?.path);
     console.error('Compress error:', error);
     res.status(500).json({ error: 'Failed to compress PDF' });
   }
@@ -161,8 +218,8 @@ app.post('/api/compress', upload.single('pdf'), async (req, res) => {
 
 // Rotate PDF
 app.post('/api/rotate', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
   try {
-    const file = req.file;
     const rotation = parseInt(req.body.rotation) || 90;
     
     if (!file) {
@@ -174,39 +231,36 @@ app.post('/api/rotate', upload.single('pdf'), async (req, res) => {
     
     const pages = pdf.getPages();
     pages.forEach(page => {
-      page.setRotation({ angle: rotation });
+      const currentRotation = page.getRotation().angle;
+      page.setRotation(degrees(currentRotation + rotation));
     });
 
     const rotatedBytes = await pdf.save();
     const outputPath = `uploads/rotated-${Date.now()}.pdf`;
     await fs.writeFile(outputPath, rotatedBytes);
-
-    // Clean up uploaded file
-    await fs.unlink(file.path);
+    await cleanupFiles(file.path);
 
     res.download(outputPath, 'rotated.pdf', async () => {
-      // Clean up output file after download
-      await fs.unlink(outputPath);
+      await cleanupFiles(outputPath);
     });
   } catch (error) {
+    await cleanupFiles(file?.path);
     console.error('Rotate error:', error);
     res.status(500).json({ error: 'Failed to rotate PDF' });
   }
 });
 
-// Word to PDF conversion with mammoth
+// Word to PDF
 app.post('/api/word-to-pdf', upload.single('document'), async (req, res) => {
+  const file = req.file;
   try {
-    const file = req.file;
     if (!file) {
       return res.status(400).json({ error: 'Word document is required' });
     }
 
-    // Extract text from Word document using mammoth
     const result = await mammoth.extractRawText({ path: file.path });
     const text = result.value;
 
-    // Create PDF with extracted text
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontSize = 12;
@@ -214,20 +268,52 @@ app.post('/api/word-to-pdf', upload.single('document'), async (req, res) => {
     const pageWidth = 612;
     const pageHeight = 792;
     const maxWidth = pageWidth - (margin * 2);
+    const lineHeight = fontSize + 6;
     
     let page = pdfDoc.addPage([pageWidth, pageHeight]);
     let yPosition = pageHeight - margin;
 
-    // Split text into lines that fit the page width
-    const words = text.split(/\s+/);
-    let currentLine = '';
+    const lines = text.split('\n');
     
-    for (const word of words) {
-      const testLine = currentLine + (currentLine ? ' ' : '') + word;
-      const textWidth = font.widthOfTextAtSize(testLine, fontSize);
+    for (const line of lines) {
+      if (!line.trim()) {
+        yPosition -= lineHeight;
+        if (yPosition < margin) {
+          page = pdfDoc.addPage([pageWidth, pageHeight]);
+          yPosition = pageHeight - margin;
+        }
+        continue;
+      }
+
+      const words = line.split(/\s+/);
+      let currentLine = '';
       
-      if (textWidth > maxWidth && currentLine) {
-        // Draw current line
+      for (const word of words) {
+        const testLine = currentLine + (currentLine ? ' ' : '') + word;
+        const textWidth = font.widthOfTextAtSize(testLine, fontSize);
+        
+        if (textWidth > maxWidth && currentLine) {
+          page.drawText(currentLine, {
+            x: margin,
+            y: yPosition,
+            size: fontSize,
+            font: font,
+            color: rgb(0, 0, 0),
+          });
+          
+          yPosition -= lineHeight;
+          currentLine = word;
+          
+          if (yPosition < margin) {
+            page = pdfDoc.addPage([pageWidth, pageHeight]);
+            yPosition = pageHeight - margin;
+          }
+        } else {
+          currentLine = testLine;
+        }
+      }
+      
+      if (currentLine) {
         page.drawText(currentLine, {
           x: margin,
           y: yPosition,
@@ -235,53 +321,35 @@ app.post('/api/word-to-pdf', upload.single('document'), async (req, res) => {
           font: font,
           color: rgb(0, 0, 0),
         });
+        yPosition -= lineHeight;
         
-        yPosition -= fontSize + 4;
-        currentLine = word;
-        
-        // Check if we need a new page
         if (yPosition < margin) {
           page = pdfDoc.addPage([pageWidth, pageHeight]);
           yPosition = pageHeight - margin;
         }
-      } else {
-        currentLine = testLine;
       }
-    }
-    
-    // Draw remaining text
-    if (currentLine) {
-      page.drawText(currentLine, {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: font,
-        color: rgb(0, 0, 0),
-      });
     }
 
     const pdfBytes = await pdfDoc.save();
     const outputPath = `uploads/converted-${Date.now()}.pdf`;
     await fs.writeFile(outputPath, pdfBytes);
-
-    // Clean up uploaded file
-    await fs.unlink(file.path);
+    await cleanupFiles(file.path);
 
     res.download(outputPath, 'converted.pdf', async () => {
-      // Clean up output file after download
-      await fs.unlink(outputPath);
+      await cleanupFiles(outputPath);
     });
   } catch (error) {
+    await cleanupFiles(file?.path);
     console.error('Word to PDF error:', error);
     res.status(500).json({ error: 'Failed to convert Word to PDF' });
   }
 });
 
-// JPG to PDF conversion
+// JPG to PDF
 app.post('/api/jpg-to-pdf', upload.array('images'), async (req, res) => {
+  const files = req.files || [];
   try {
-    const files = req.files;
-    if (!files || files.length === 0) {
+    if (files.length === 0) {
       return res.status(400).json({ error: 'At least one image file is required' });
     }
 
@@ -291,12 +359,12 @@ app.post('/api/jpg-to-pdf', upload.array('images'), async (req, res) => {
       const imageBytes = await fs.readFile(file.path);
       let image;
       
-      if (file.mimetype === 'image/jpeg') {
+      if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg') {
         image = await pdfDoc.embedJpg(imageBytes);
       } else if (file.mimetype === 'image/png') {
         image = await pdfDoc.embedPng(imageBytes);
       } else {
-        continue; // Skip unsupported formats
+        continue;
       }
       
       const page = pdfDoc.addPage([image.width, image.height]);
@@ -306,72 +374,102 @@ app.post('/api/jpg-to-pdf', upload.array('images'), async (req, res) => {
         width: image.width,
         height: image.height,
       });
-      
-      // Clean up uploaded file
-      await fs.unlink(file.path);
     }
 
     const pdfBytes = await pdfDoc.save();
     const outputPath = `uploads/images-to-pdf-${Date.now()}.pdf`;
     await fs.writeFile(outputPath, pdfBytes);
+    await cleanupFiles(...files.map(f => f.path));
 
     res.download(outputPath, 'images-to-pdf.pdf', async () => {
-      // Clean up output file after download
-      await fs.unlink(outputPath);
+      await cleanupFiles(outputPath);
     });
   } catch (error) {
+    await cleanupFiles(...files.map(f => f.path));
     console.error('JPG to PDF error:', error);
     res.status(500).json({ error: 'Failed to convert images to PDF' });
   }
 });
 
-// Download split files
-app.get('/api/download/:filename', async (req, res) => {
+// PDF to JPG - Convert PDF pages to images
+app.post('/api/pdf-to-jpg', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
   try {
-    const filename = req.params.filename;
-    const filePath = `uploads/${filename}`;
-    
-    res.download(filePath, filename, async () => {
-      // Clean up file after download
-      await fs.unlink(filePath);
-    });
-  } catch (error) {
-    res.status(404).json({ error: 'File not found' });
-  }
-});
-
-// Protect PDF with password
-app.post('/api/protect', upload.single('pdf'), async (req, res) => {
-  try {
-    const file = req.file;
-    const password = req.body.password || 'password123';
-    
     if (!file) {
       return res.status(400).json({ error: 'PDF file is required' });
     }
 
     const pdfBytes = await fs.readFile(file.path);
     const pdf = await PDFDocument.load(pdfBytes);
+    const pageCount = pdf.getPageCount();
     
-    // Add metadata to indicate protection (pdf-lib doesn't support encryption directly)
+    const outputFiles = [];
+    
+    for (let i = 0; i < pageCount; i++) {
+      // Create a new PDF with just this page
+      const singlePagePdf = await PDFDocument.create();
+      const [copiedPage] = await singlePagePdf.copyPages(pdf, [i]);
+      singlePagePdf.addPage(copiedPage);
+      
+      const singlePageBytes = await singlePagePdf.save();
+      const outputPath = `uploads/page-${i + 1}-${Date.now()}.pdf`;
+      await fs.writeFile(outputPath, singlePageBytes);
+      outputFiles.push({
+        page: i + 1,
+        url: `/api/download/${outputPath.split('/')[1]}`
+      });
+    }
+
+    await cleanupFiles(file.path);
+
+    res.json({ 
+      message: `PDF has ${pageCount} pages. Download each page as PDF (JPG conversion requires additional system libraries).`,
+      pageCount,
+      files: outputFiles
+    });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    console.error('PDF to JPG error:', error);
+    res.status(500).json({ error: 'Failed to process PDF' });
+  }
+});
+
+// Protect PDF with password (metadata-based protection indicator)
+app.post('/api/protect', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
+    const password = req.body.password;
+    
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+    
+    if (!password || password.length < 4) {
+      return res.status(400).json({ error: 'Password must be at least 4 characters' });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    
+    // Note: pdf-lib doesn't support encryption. For real password protection,
+    // you'd need to use a library like qpdf or muhammara
     pdf.setTitle('Protected PDF');
     pdf.setAuthor('PDF Magic');
-    pdf.setSubject('Password Protected Document');
+    pdf.setSubject(`Protected with password`);
     pdf.setKeywords(['protected', 'secure']);
-    pdf.setProducer('PDF Magic - https://github.com/NAMATOVU-CHRISTINE/PDFMagic');
+    pdf.setProducer('PDF Magic');
     pdf.setCreator('PDF Magic');
     
     const protectedBytes = await pdf.save();
     const outputPath = `uploads/protected-${Date.now()}.pdf`;
     await fs.writeFile(outputPath, protectedBytes);
-
-    // Clean up uploaded file
-    await fs.unlink(file.path);
+    await cleanupFiles(file.path);
 
     res.download(outputPath, 'protected.pdf', async () => {
-      await fs.unlink(outputPath);
+      await cleanupFiles(outputPath);
     });
   } catch (error) {
+    await cleanupFiles(file?.path);
     console.error('Protect error:', error);
     res.status(500).json({ error: 'Failed to protect PDF' });
   }
@@ -379,8 +477,8 @@ app.post('/api/protect', upload.single('pdf'), async (req, res) => {
 
 // Add watermark to PDF
 app.post('/api/watermark', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
   try {
-    const file = req.file;
     const watermarkText = req.body.text || 'CONFIDENTIAL';
     
     if (!file) {
@@ -394,37 +492,183 @@ app.post('/api/watermark', upload.single('pdf'), async (req, res) => {
     const pages = pdf.getPages();
     for (const page of pages) {
       const { width, height } = page.getSize();
+      const textWidth = font.widthOfTextAtSize(watermarkText, 50);
       
       page.drawText(watermarkText, {
-        x: width / 4,
+        x: (width - textWidth) / 2,
         y: height / 2,
         size: 50,
         font: font,
-        color: rgb(0.8, 0.8, 0.8),
+        color: rgb(0.75, 0.75, 0.75),
         opacity: 0.3,
-        rotate: { angle: 45, type: 'degrees' }
+        rotate: degrees(45)
       });
     }
 
     const watermarkedBytes = await pdf.save();
     const outputPath = `uploads/watermarked-${Date.now()}.pdf`;
     await fs.writeFile(outputPath, watermarkedBytes);
-
-    await fs.unlink(file.path);
+    await cleanupFiles(file.path);
 
     res.download(outputPath, 'watermarked.pdf', async () => {
-      await fs.unlink(outputPath);
+      await cleanupFiles(outputPath);
     });
   } catch (error) {
+    await cleanupFiles(file?.path);
     console.error('Watermark error:', error);
     res.status(500).json({ error: 'Failed to add watermark' });
   }
 });
 
-// Get PDF info/metadata
-app.post('/api/pdf-info', upload.single('pdf'), async (req, res) => {
+// Edit PDF - Add text to PDF
+app.post('/api/edit-pdf', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
   try {
-    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const { text, x, y, pageNum, fontSize: size, color } = req.body;
+    
+    if (!text) {
+      return res.status(400).json({ error: 'Text content is required' });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    
+    const pages = pdf.getPages();
+    const targetPage = parseInt(pageNum) || 1;
+    
+    if (targetPage < 1 || targetPage > pages.length) {
+      return res.status(400).json({ error: `Invalid page number. PDF has ${pages.length} pages.` });
+    }
+    
+    const page = pages[targetPage - 1];
+    const { height } = page.getSize();
+    
+    // Parse color (default black)
+    let textColor = rgb(0, 0, 0);
+    if (color) {
+      const hex = color.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16) / 255;
+      const g = parseInt(hex.substring(2, 4), 16) / 255;
+      const b = parseInt(hex.substring(4, 6), 16) / 255;
+      textColor = rgb(r, g, b);
+    }
+    
+    page.drawText(text, {
+      x: parseFloat(x) || 50,
+      y: height - (parseFloat(y) || 50),
+      size: parseInt(size) || 12,
+      font: font,
+      color: textColor,
+    });
+
+    const editedBytes = await pdf.save();
+    const outputPath = `uploads/edited-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, editedBytes);
+    await cleanupFiles(file.path);
+
+    res.download(outputPath, 'edited.pdf', async () => {
+      await cleanupFiles(outputPath);
+    });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    console.error('Edit PDF error:', error);
+    res.status(500).json({ error: 'Failed to edit PDF' });
+  }
+});
+
+// PDF to Word (text extraction)
+app.post('/api/pdf-to-word', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    // Dynamic import for pdf-parse
+    let pdfParse;
+    try {
+      pdfParse = (await import('pdf-parse')).default;
+    } catch (e) {
+      // Fallback: extract text using pdf-lib (limited)
+      const pdfBytes = await fs.readFile(file.path);
+      const pdf = await PDFDocument.load(pdfBytes);
+      const pageCount = pdf.getPageCount();
+      
+      await cleanupFiles(file.path);
+      
+      return res.json({
+        message: 'PDF text extraction requires pdf-parse library. Install it with: npm install pdf-parse',
+        pageCount,
+        note: 'For now, please use an online converter for PDF to Word.'
+      });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const data = await pdfParse(pdfBytes);
+    
+    // Create a simple text file (for full Word support, you'd need docx library)
+    const outputPath = `uploads/extracted-${Date.now()}.txt`;
+    await fs.writeFile(outputPath, data.text);
+    await cleanupFiles(file.path);
+
+    res.download(outputPath, 'extracted-text.txt', async () => {
+      await cleanupFiles(outputPath);
+    });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    console.error('PDF to Word error:', error);
+    res.status(500).json({ error: 'Failed to extract text from PDF' });
+  }
+});
+
+// PDF to Excel (table extraction)
+app.post('/api/pdf-to-excel', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    let pdfParse;
+    try {
+      pdfParse = (await import('pdf-parse')).default;
+    } catch (e) {
+      await cleanupFiles(file.path);
+      return res.status(400).json({
+        error: 'PDF to Excel requires pdf-parse library. Install it with: npm install pdf-parse'
+      });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const data = await pdfParse(pdfBytes);
+    
+    // Simple CSV output (for full Excel, you'd need xlsx library)
+    const lines = data.text.split('\n').filter(line => line.trim());
+    const csvContent = lines.map(line => `"${line.replace(/"/g, '""')}"`).join('\n');
+    
+    const outputPath = `uploads/extracted-${Date.now()}.csv`;
+    await fs.writeFile(outputPath, csvContent);
+    await cleanupFiles(file.path);
+
+    res.download(outputPath, 'extracted-data.csv', async () => {
+      await cleanupFiles(outputPath);
+    });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    console.error('PDF to Excel error:', error);
+    res.status(500).json({ error: 'Failed to extract data from PDF' });
+  }
+});
+
+// Get PDF info
+app.post('/api/pdf-info', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
     if (!file) {
       return res.status(400).json({ error: 'PDF file is required' });
     }
@@ -443,20 +687,20 @@ app.post('/api/pdf-info', upload.single('pdf'), async (req, res) => {
       fileName: file.originalname
     };
 
-    await fs.unlink(file.path);
-
+    await cleanupFiles(file.path);
     res.json(info);
   } catch (error) {
+    await cleanupFiles(file?.path);
     console.error('PDF info error:', error);
     res.status(500).json({ error: 'Failed to get PDF info' });
   }
 });
 
-// Extract pages from PDF
+// Extract pages
 app.post('/api/extract-pages', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
   try {
-    const file = req.file;
-    const pages = req.body.pages; // e.g., "1,3,5" or "1-5"
+    const pages = req.body.pages;
     
     if (!file) {
       return res.status(400).json({ error: 'PDF file is required' });
@@ -466,7 +710,6 @@ app.post('/api/extract-pages', upload.single('pdf'), async (req, res) => {
     const pdf = await PDFDocument.load(pdfBytes);
     const newPdf = await PDFDocument.create();
     
-    // Parse page numbers
     let pageIndices = [];
     if (pages) {
       const parts = pages.split(',');
@@ -474,14 +717,19 @@ app.post('/api/extract-pages', upload.single('pdf'), async (req, res) => {
         if (part.includes('-')) {
           const [start, end] = part.split('-').map(n => parseInt(n) - 1);
           for (let i = start; i <= end; i++) {
-            pageIndices.push(i);
+            if (i >= 0 && i < pdf.getPageCount()) pageIndices.push(i);
           }
         } else {
-          pageIndices.push(parseInt(part) - 1);
+          const idx = parseInt(part) - 1;
+          if (idx >= 0 && idx < pdf.getPageCount()) pageIndices.push(idx);
         }
       }
     } else {
       pageIndices = pdf.getPageIndices();
+    }
+
+    if (pageIndices.length === 0) {
+      return res.status(400).json({ error: 'No valid pages specified' });
     }
 
     const copiedPages = await newPdf.copyPages(pdf, pageIndices);
@@ -490,17 +738,34 @@ app.post('/api/extract-pages', upload.single('pdf'), async (req, res) => {
     const extractedBytes = await newPdf.save();
     const outputPath = `uploads/extracted-${Date.now()}.pdf`;
     await fs.writeFile(outputPath, extractedBytes);
-
-    await fs.unlink(file.path);
+    await cleanupFiles(file.path);
 
     res.download(outputPath, 'extracted.pdf', async () => {
-      await fs.unlink(outputPath);
+      await cleanupFiles(outputPath);
     });
   } catch (error) {
+    await cleanupFiles(file?.path);
     console.error('Extract pages error:', error);
     res.status(500).json({ error: 'Failed to extract pages' });
   }
 });
+
+// Download file
+app.get('/api/download/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = `uploads/${filename}`;
+    
+    res.download(filePath, filename, async () => {
+      await cleanupFiles(filePath);
+    });
+  } catch (error) {
+    res.status(404).json({ error: 'File not found' });
+  }
+});
+
+// Apply error handler
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
