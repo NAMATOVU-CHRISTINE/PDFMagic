@@ -750,6 +750,54 @@ app.post('/api/extract-pages', upload.single('pdf'), async (req, res) => {
   }
 });
 
+// Add page numbers to PDF
+app.post('/api/add-page-numbers', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const { position = 'bottom', startNumber = 1, format = 'Page {n}' } = req.body;
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const pages = pdf.getPages();
+    
+    pages.forEach((page, index) => {
+      const { width, height } = page.getSize();
+      const pageNum = parseInt(startNumber) + index;
+      const text = format.replace('{n}', pageNum).replace('{total}', pages.length);
+      const textWidth = font.widthOfTextAtSize(text, 10);
+      
+      let x = (width - textWidth) / 2;
+      let y = position === 'top' ? height - 30 : 30;
+      
+      page.drawText(text, {
+        x,
+        y,
+        size: 10,
+        font,
+        color: rgb(0.3, 0.3, 0.3),
+      });
+    });
+
+    const numberedBytes = await pdf.save();
+    const outputPath = `uploads/numbered-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, numberedBytes);
+    await cleanupFiles(file.path);
+
+    res.download(outputPath, 'numbered.pdf', async () => {
+      await cleanupFiles(outputPath);
+    });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    console.error('Add page numbers error:', error);
+    res.status(500).json({ error: 'Failed to add page numbers' });
+  }
+});
+
 // Download file
 app.get('/api/download/:filename', async (req, res) => {
   try {
