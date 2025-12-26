@@ -5,6 +5,7 @@ import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import fs from 'fs/promises';
 import path from 'path';
 import mammoth from 'mammoth';
+import archiver from 'archiver';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -747,6 +748,39 @@ app.post('/api/extract-pages', upload.single('pdf'), async (req, res) => {
     await cleanupFiles(file?.path);
     console.error('Extract pages error:', error);
     res.status(500).json({ error: 'Failed to extract pages' });
+  }
+});
+
+// Batch download as ZIP
+app.post('/api/batch-download', express.json(), async (req, res) => {
+  try {
+    const { files } = req.body;
+    
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({ error: 'No files specified' });
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename=pdf-magic-files.zip');
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.pipe(res);
+
+    for (const fileUrl of files) {
+      const filename = fileUrl.split('/').pop();
+      const filePath = `uploads/${filename}`;
+      try {
+        await fs.access(filePath);
+        archive.file(filePath, { name: filename });
+      } catch (e) {
+        // Skip missing files
+      }
+    }
+
+    await archive.finalize();
+  } catch (error) {
+    console.error('Batch download error:', error);
+    res.status(500).json({ error: 'Failed to create ZIP file' });
   }
 });
 
