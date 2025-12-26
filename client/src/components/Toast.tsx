@@ -8,7 +8,6 @@ interface ToastProps {
   type: ToastType;
   onClose: () => void;
   duration?: number;
-  darkMode?: boolean;
 }
 
 const Toast: React.FC<ToastProps> = ({ 
