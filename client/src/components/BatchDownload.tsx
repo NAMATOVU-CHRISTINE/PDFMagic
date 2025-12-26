@@ -1,15 +1,14 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Package, Loader } from 'lucide-react';
 import axios from 'axios';
 
 interface BatchDownloadProps {
   files: string[];
-  darkMode?: boolean;
 }
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '';
 
-const BatchDownload: React.FC<BatchDownloadProps> = ({ files, darkMode = false }) => {
+const BatchDownload: React.FC<BatchDownloadProps> = ({ files }) => {
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleBatchDownload = async () => {
@@ -44,11 +43,7 @@ const BatchDownload: React.FC<BatchDownloadProps> = ({ files, darkMode = false }
     <button
       onClick={handleBatchDownload}
       disabled={isDownloading}
-      className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-        darkMode
-          ? 'bg-gray-700 hover:bg-gray-600 text-white'
-          : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
-      } disabled:opacity-50 disabled:cursor-not-allowed`}
+      className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {isDownloading ? (
         <Loader className="h-4 w-4 animate-spin" />
