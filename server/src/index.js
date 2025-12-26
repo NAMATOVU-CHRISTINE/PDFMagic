@@ -750,6 +750,41 @@ app.post('/api/extract-pages', upload.single('pdf'), async (req, res) => {
   }
 });
 
+// Edit PDF metadata
+app.post('/api/edit-metadata', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const { title, author, subject, keywords, creator } = req.body;
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    
+    if (title) pdf.setTitle(title);
+    if (author) pdf.setAuthor(author);
+    if (subject) pdf.setSubject(subject);
+    if (keywords) pdf.setKeywords(keywords.split(',').map(k => k.trim()));
+    if (creator) pdf.setCreator(creator);
+    pdf.setModificationDate(new Date());
+
+    const updatedBytes = await pdf.save();
+    const outputPath = `uploads/metadata-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, updatedBytes);
+    await cleanupFiles(file.path);
+
+    res.download(outputPath, 'updated-metadata.pdf', async () => {
+      await cleanupFiles(outputPath);
+    });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    console.error('Edit metadata error:', error);
+    res.status(500).json({ error: 'Failed to edit metadata' });
+  }
+});
+
 // Add page numbers to PDF
 app.post('/api/add-page-numbers', upload.single('pdf'), async (req, res) => {
   const file = req.file;
