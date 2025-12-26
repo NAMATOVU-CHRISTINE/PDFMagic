@@ -1,4 +1,10 @@
+# robots.txt for PDF Magic
+
 User-agent: *
 Allow: /
 
-Sitemap: https://pdfmagic.com/sitemap.xml
+# Sitemap
+Sitemap: https://pdfmagic.app/sitemap.xml
+
+# Disallow API routes
+Disallow: /api/
