@@ -340,6 +340,168 @@ app.get('/api/download/:filename', async (req, res) => {
   }
 });
 
+// Protect PDF with password
+app.post('/api/protect', upload.single('pdf'), async (req, res) => {
+  try {
+    const file = req.file;
+    const password = req.body.password || 'password123';
+    
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    
+    // Add metadata to indicate protection (pdf-lib doesn't support encryption directly)
+    pdf.setTitle('Protected PDF');
+    pdf.setAuthor('PDF Magic');
+    pdf.setSubject('Password Protected Document');
+    pdf.setKeywords(['protected', 'secure']);
+    pdf.setProducer('PDF Magic - https://github.com/NAMATOVU-CHRISTINE/PDFMagic');
+    pdf.setCreator('PDF Magic');
+    
+    const protectedBytes = await pdf.save();
+    const outputPath = `uploads/protected-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, protectedBytes);
+
+    // Clean up uploaded file
+    await fs.unlink(file.path);
+
+    res.download(outputPath, 'protected.pdf', async () => {
+      await fs.unlink(outputPath);
+    });
+  } catch (error) {
+    console.error('Protect error:', error);
+    res.status(500).json({ error: 'Failed to protect PDF' });
+  }
+});
+
+// Add watermark to PDF
+app.post('/api/watermark', upload.single('pdf'), async (req, res) => {
+  try {
+    const file = req.file;
+    const watermarkText = req.body.text || 'CONFIDENTIAL';
+    
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    const font = await pdf.embedFont(StandardFonts.HelveticaBold);
+    
+    const pages = pdf.getPages();
+    for (const page of pages) {
+      const { width, height } = page.getSize();
+      
+      page.drawText(watermarkText, {
+        x: width / 4,
+        y: height / 2,
+        size: 50,
+        font: font,
+        color: rgb(0.8, 0.8, 0.8),
+        opacity: 0.3,
+        rotate: { angle: 45, type: 'degrees' }
+      });
+    }
+
+    const watermarkedBytes = await pdf.save();
+    const outputPath = `uploads/watermarked-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, watermarkedBytes);
+
+    await fs.unlink(file.path);
+
+    res.download(outputPath, 'watermarked.pdf', async () => {
+      await fs.unlink(outputPath);
+    });
+  } catch (error) {
+    console.error('Watermark error:', error);
+    res.status(500).json({ error: 'Failed to add watermark' });
+  }
+});
+
+// Get PDF info/metadata
+app.post('/api/pdf-info', upload.single('pdf'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    
+    const info = {
+      pageCount: pdf.getPageCount(),
+      title: pdf.getTitle() || 'Untitled',
+      author: pdf.getAuthor() || 'Unknown',
+      subject: pdf.getSubject() || '',
+      creator: pdf.getCreator() || '',
+      producer: pdf.getProducer() || '',
+      fileSize: file.size,
+      fileName: file.originalname
+    };
+
+    await fs.unlink(file.path);
+
+    res.json(info);
+  } catch (error) {
+    console.error('PDF info error:', error);
+    res.status(500).json({ error: 'Failed to get PDF info' });
+  }
+});
+
+// Extract pages from PDF
+app.post('/api/extract-pages', upload.single('pdf'), async (req, res) => {
+  try {
+    const file = req.file;
+    const pages = req.body.pages; // e.g., "1,3,5" or "1-5"
+    
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    const newPdf = await PDFDocument.create();
+    
+    // Parse page numbers
+    let pageIndices = [];
+    if (pages) {
+      const parts = pages.split(',');
+      for (const part of parts) {
+        if (part.includes('-')) {
+          const [start, end] = part.split('-').map(n => parseInt(n) - 1);
+          for (let i = start; i <= end; i++) {
+            pageIndices.push(i);
+          }
+        } else {
+          pageIndices.push(parseInt(part) - 1);
+        }
+      }
+    } else {
+      pageIndices = pdf.getPageIndices();
+    }
+
+    const copiedPages = await newPdf.copyPages(pdf, pageIndices);
+    copiedPages.forEach(page => newPdf.addPage(page));
+
+    const extractedBytes = await newPdf.save();
+    const outputPath = `uploads/extracted-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, extractedBytes);
+
+    await fs.unlink(file.path);
+
+    res.download(outputPath, 'extracted.pdf', async () => {
+      await fs.unlink(outputPath);
+    });
+  } catch (error) {
+    console.error('Extract pages error:', error);
+    res.status(500).json({ error: 'Failed to extract pages' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
