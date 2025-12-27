@@ -13,6 +13,11 @@ import {
   Edit,
   FileSpreadsheet,
   Droplet,
+  Unlock,
+  Scissors,
+  ScanLine,
+  PenTool,
+  Images,
 } from 'lucide-react';
 import FileUpload from './components/FileUpload';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -136,6 +141,46 @@ function App() {
       description: 'Convert PDF to spreadsheet',
       icon: FileSpreadsheet,
       color: 'bg-green-600',
+      category: 'convert',
+    },
+    {
+      id: 'unlock-pdf',
+      title: 'Unlock PDF',
+      description: 'Remove password from PDF',
+      icon: Unlock,
+      color: 'bg-yellow-500',
+      category: 'security',
+    },
+    {
+      id: 'extract-pages',
+      title: 'Extract Pages',
+      description: 'Select and extract specific pages',
+      icon: Scissors,
+      color: 'bg-rose-500',
+      category: 'organize',
+    },
+    {
+      id: 'ocr',
+      title: 'OCR',
+      description: 'Extract text from scanned PDFs',
+      icon: ScanLine,
+      color: 'bg-amber-500',
+      category: 'convert',
+    },
+    {
+      id: 'sign-pdf',
+      title: 'Sign PDF',
+      description: 'Add signature to your PDF',
+      icon: PenTool,
+      color: 'bg-violet-500',
+      category: 'security',
+    },
+    {
+      id: 'images-to-pdf',
+      title: 'Images to PDF',
+      description: 'Convert multiple images to PDF',
+      icon: Images,
+      color: 'bg-emerald-500',
       category: 'convert',
     },
   ];

@@ -27,6 +27,9 @@ const FileUpload: React.FC<FileUploadProps> = ({ toolType, darkMode = false }) =
   const [editFontSize, setEditFontSize] = useState('12');
   const [editColor, setEditColor] = useState('#000000');
   const [rotation, setRotation] = useState('90');
+  const [selectedPages, setSelectedPages] = useState('');
+  const [signatureText, setSignatureText] = useState('');
+  const [signaturePage, setSignaturePage] = useState('1');
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setFiles(prev => [...prev, ...acceptedFiles]);
@@ -38,6 +41,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ toolType, darkMode = false }) =
     switch (toolType) {
       case 'jpg-to-pdf':
         return { 'image/jpeg': ['.jpg', '.jpeg'], 'image/png': ['.png'] };
+      case 'images-to-pdf':
+        return { 'image/jpeg': ['.jpg', '.jpeg'], 'image/png': ['.png'], 'image/gif': ['.gif'], 'image/webp': ['.webp'] };
       case 'word-to-pdf':
         return { 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'] };
       default:
@@ -48,7 +53,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ toolType, darkMode = false }) =
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: getAcceptedFiles(),
-    multiple: ['merge', 'jpg-to-pdf'].includes(toolType)
+    multiple: ['merge', 'jpg-to-pdf', 'images-to-pdf'].includes(toolType)
   });
 
   const removeFile = (index: number) => {
@@ -229,6 +234,67 @@ const FileUpload: React.FC<FileUploadProps> = ({ toolType, darkMode = false }) =
           break;
         }
 
+        case 'unlock-pdf': {
+          formData.append('pdf', files[0]);
+          if (password) formData.append('password', password);
+          const response = await axios.post(`${API_BASE}/api/unlock-pdf`, formData, {
+            responseType: 'blob',
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          downloadBlob(new Blob([response.data]), 'unlocked.pdf');
+          setResult({ type: 'download', message: 'PDF unlocked successfully!' });
+          break;
+        }
+
+        case 'extract-pages': {
+          formData.append('pdf', files[0]);
+          formData.append('pages', selectedPages);
+          const response = await axios.post(`${API_BASE}/api/extract-specific-pages`, formData, {
+            responseType: 'blob',
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          downloadBlob(new Blob([response.data]), 'extracted-pages.pdf');
+          setResult({ type: 'download', message: 'Pages extracted successfully!' });
+          break;
+        }
+
+        case 'sign-pdf': {
+          if (!signatureText) {
+            setError('Please enter your signature');
+            setIsProcessing(false);
+            return;
+          }
+          formData.append('pdf', files[0]);
+          formData.append('signature', signatureText);
+          formData.append('x', '50');
+          formData.append('y', '100');
+          formData.append('pageNum', signaturePage);
+          formData.append('fontSize', '14');
+          const response = await axios.post(`${API_BASE}/api/sign-pdf`, formData, {
+            responseType: 'blob',
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          downloadBlob(new Blob([response.data]), 'signed.pdf');
+          setResult({ type: 'download', message: 'PDF signed successfully!' });
+          break;
+        }
+
+        case 'images-to-pdf': {
+          files.forEach(file => formData.append('images', file));
+          const response = await axios.post(`${API_BASE}/api/images-to-pdf`, formData, {
+            responseType: 'blob',
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          downloadBlob(new Blob([response.data]), 'images-to-pdf.pdf');
+          setResult({ type: 'download', message: 'Images converted to PDF!' });
+          break;
+        }
+
+        case 'ocr': {
+          setResult({ type: 'info', message: 'OCR feature requires server-side Tesseract setup. Coming soon!' });
+          break;
+        }
+
         default:
           setResult({ type: 'info', message: `${getToolTitle()} is coming soon!` });
       }
@@ -263,6 +329,11 @@ const FileUpload: React.FC<FileUploadProps> = ({ toolType, darkMode = false }) =
       'word-to-pdf': 'Word to PDF',
       'pdf-to-word': 'PDF to Word',
       'pdf-to-excel': 'PDF to Excel',
+      'unlock-pdf': 'Unlock PDF',
+      'extract-pages': 'Extract Pages',
+      'ocr': 'OCR - Text Recognition',
+      'sign-pdf': 'Sign PDF',
+      'images-to-pdf': 'Images to PDF',
     };
     return titles[toolType] || 'Process PDF';
   };
@@ -281,6 +352,11 @@ const FileUpload: React.FC<FileUploadProps> = ({ toolType, darkMode = false }) =
       'word-to-pdf': 'Convert Word documents to PDF format',
       'pdf-to-word': 'Extract text content from PDF',
       'pdf-to-excel': 'Extract data from PDF to spreadsheet format',
+      'unlock-pdf': 'Remove password protection from PDF',
+      'extract-pages': 'Select and extract specific pages from PDF',
+      'ocr': 'Extract text from scanned PDF images',
+      'sign-pdf': 'Add your signature to PDF document',
+      'images-to-pdf': 'Convert multiple images (JPG, PNG, GIF, WebP) to PDF',
     };
     return descriptions[toolType] || 'Select files to process';
   };
@@ -384,6 +460,69 @@ const FileUpload: React.FC<FileUploadProps> = ({ toolType, darkMode = false }) =
                   placeholder="Enter watermark text"
                   className={inputClass}
                 />
+              </div>
+            )}
+
+            {toolType === 'unlock-pdf' && (
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  PDF Password (if known)
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password (optional)"
+                  className={inputClass}
+                />
+              </div>
+            )}
+
+            {toolType === 'extract-pages' && (
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Pages to Extract
+                </label>
+                <input
+                  type="text"
+                  value={selectedPages}
+                  onChange={(e) => setSelectedPages(e.target.value)}
+                  placeholder="e.g., 1-3, 5, 7-10"
+                  className={inputClass}
+                />
+                <p className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                  Enter page numbers or ranges separated by commas
+                </p>
+              </div>
+            )}
+
+            {toolType === 'sign-pdf' && (
+              <div className="space-y-4">
+                <div>
+                  <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Your Signature
+                  </label>
+                  <input
+                    type="text"
+                    value={signatureText}
+                    onChange={(e) => setSignatureText(e.target.value)}
+                    placeholder="Type your signature"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Page Number
+                  </label>
+                  <input
+                    type="number"
+                    value={signaturePage}
+                    onChange={(e) => setSignaturePage(e.target.value)}
+                    min="1"
+                    placeholder="Last page by default"
+                    className={inputClass}
+                  />
+                </div>
               </div>
             )}
 

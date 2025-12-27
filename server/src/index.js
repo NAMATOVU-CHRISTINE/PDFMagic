@@ -881,6 +881,226 @@ app.get('/api/download/:filename', async (req, res) => {
   }
 });
 
+// Unlock PDF (attempt to load without password - works for some PDFs)
+app.post('/api/unlock-pdf', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const password = req.body.password || '';
+    const pdfBytes = await fs.readFile(file.path);
+    
+    // Try to load with password
+    const pdf = await PDFDocument.load(pdfBytes, { 
+      ignoreEncryption: true,
+      password: password 
+    });
+    
+    // Save without encryption
+    const unlockedBytes = await pdf.save();
+    const outputPath = `uploads/unlocked-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, unlockedBytes);
+    await cleanupFiles(file.path);
+
+    res.download(outputPath, 'unlocked.pdf', async () => {
+      await cleanupFiles(outputPath);
+    });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    console.error('Unlock PDF error:', error);
+    res.status(500).json({ error: 'Failed to unlock PDF. Make sure the password is correct.' });
+  }
+});
+
+// Extract specific pages
+app.post('/api/extract-specific-pages', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const pages = req.body.pages; // comma-separated: "1,3,5-7"
+    if (!pages) {
+      return res.status(400).json({ error: 'Please specify pages to extract' });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    const newPdf = await PDFDocument.create();
+    const totalPages = pdf.getPageCount();
+    
+    // Parse page selection
+    const pageIndices = [];
+    const parts = pages.split(',');
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed.includes('-')) {
+        const [start, end] = trimmed.split('-').map(n => parseInt(n));
+        for (let i = start; i <= end; i++) {
+          if (i >= 1 && i <= totalPages) pageIndices.push(i - 1);
+        }
+      } else {
+        const num = parseInt(trimmed);
+        if (num >= 1 && num <= totalPages) pageIndices.push(num - 1);
+      }
+    }
+
+    if (pageIndices.length === 0) {
+      return res.status(400).json({ error: 'No valid pages specified' });
+    }
+
+    const copiedPages = await newPdf.copyPages(pdf, pageIndices);
+    copiedPages.forEach(page => newPdf.addPage(page));
+
+    const extractedBytes = await newPdf.save();
+    const outputPath = `uploads/extracted-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, extractedBytes);
+    await cleanupFiles(file.path);
+
+    res.download(outputPath, 'extracted-pages.pdf', async () => {
+      await cleanupFiles(outputPath);
+    });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    console.error('Extract pages error:', error);
+    res.status(500).json({ error: 'Failed to extract pages' });
+  }
+});
+
+// Get PDF page count
+app.post('/api/page-count', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    const pageCount = pdf.getPageCount();
+    
+    await cleanupFiles(file.path);
+    res.json({ pageCount });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    res.status(500).json({ error: 'Failed to read PDF' });
+  }
+});
+
+// Sign PDF (add text signature)
+app.post('/api/sign-pdf', upload.single('pdf'), async (req, res) => {
+  const file = req.file;
+  try {
+    if (!file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
+
+    const { signature, x, y, pageNum, fontSize } = req.body;
+    if (!signature) {
+      return res.status(400).json({ error: 'Signature text is required' });
+    }
+
+    const pdfBytes = await fs.readFile(file.path);
+    const pdf = await PDFDocument.load(pdfBytes);
+    const font = await pdf.embedFont(StandardFonts.Courier);
+    
+    const pages = pdf.getPages();
+    const targetPage = parseInt(pageNum) || pages.length; // Default to last page
+    
+    if (targetPage < 1 || targetPage > pages.length) {
+      return res.status(400).json({ error: `Invalid page number. PDF has ${pages.length} pages.` });
+    }
+    
+    const page = pages[targetPage - 1];
+    const { height } = page.getSize();
+    
+    page.drawText(signature, {
+      x: parseFloat(x) || 50,
+      y: height - (parseFloat(y) || 100),
+      size: parseInt(fontSize) || 14,
+      font: font,
+      color: rgb(0, 0, 0.5),
+    });
+
+    const signedBytes = await pdf.save();
+    const outputPath = `uploads/signed-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, signedBytes);
+    await cleanupFiles(file.path);
+
+    res.download(outputPath, 'signed.pdf', async () => {
+      await cleanupFiles(outputPath);
+    });
+  } catch (error) {
+    await cleanupFiles(file?.path);
+    console.error('Sign PDF error:', error);
+    res.status(500).json({ error: 'Failed to sign PDF' });
+  }
+});
+
+// Images to PDF (supports multiple formats)
+app.post('/api/images-to-pdf', upload.array('images'), async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'At least one image file is required' });
+    }
+
+    const pdfDoc = await PDFDocument.create();
+    
+    for (const file of files) {
+      const imageBytes = await fs.readFile(file.path);
+      let image;
+      
+      const mimeType = file.mimetype.toLowerCase();
+      if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+        image = await pdfDoc.embedJpg(imageBytes);
+      } else if (mimeType === 'image/png') {
+        image = await pdfDoc.embedPng(imageBytes);
+      } else {
+        // Skip unsupported formats
+        continue;
+      }
+      
+      // Scale to fit standard page size while maintaining aspect ratio
+      const maxWidth = 595; // A4 width in points
+      const maxHeight = 842; // A4 height in points
+      
+      let width = image.width;
+      let height = image.height;
+      
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width *= ratio;
+        height *= ratio;
+      }
+      
+      const page = pdfDoc.addPage([width, height]);
+      page.drawImage(image, {
+        x: 0,
+        y: 0,
+        width: width,
+        height: height,
+      });
+    }
+
+    const pdfBytes = await pdfDoc.save();
+    const outputPath = `uploads/images-to-pdf-${Date.now()}.pdf`;
+    await fs.writeFile(outputPath, pdfBytes);
+    await cleanupFiles(...files.map(f => f.path));
+
+    res.download(outputPath, 'images-to-pdf.pdf', async () => {
+      await cleanupFiles(outputPath);
+    });
+  } catch (error) {
+    await cleanupFiles(...files.map(f => f.path));
+    console.error('Images to PDF error:', error);
+    res.status(500).json({ error: 'Failed to convert images to PDF' });
+  }
+});
+
 // Apply error handler
 app.use(errorHandler);
 
