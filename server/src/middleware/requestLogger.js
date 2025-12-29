@@ -1,24 +1,12 @@
-import { logger } from '../utils/logger.js';
-
-export const requestLogger = (req, res, next) => {
-  const startTime = Date.now();
+const requestLogger = (req, res, next) => {
+  const start = Date.now();
   
-  // Log request
-  logger.info(`${req.method} ${req.path}`, {
-    ip: req.ip,
-    userAgent: req.get('user-agent')
-  });
-
-  // Log response
   res.on('finish', () => {
-    const duration = Date.now() - startTime;
-    const logLevel = res.statusCode >= 400 ? 'error' : 'info';
-    
-    logger[logLevel](`${req.method} ${req.path} ${res.statusCode}`, {
-      duration: `${duration}ms`,
-      ip: req.ip
-    });
+    const duration = Date.now() - start;
+    console.log(`${req.method} ${req.originalUrl} ${res.statusCode} - ${duration}ms`);
   });
-
+  
   next();
 };
+
+module.exports = requestLogger;
