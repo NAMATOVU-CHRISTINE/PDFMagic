@@ -1,11 +1,14 @@
 const { pipeline } = require('stream/promises');
-const fs = require('fs');
+const { Readable, Writable } = require('stream');
 
-const pipeStreams = async (source, destination) => {
-  await pipeline(source, destination);
+const streamToBuffer = async (stream) => {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 };
 
-const createReadStream = (path) => fs.createReadStream(path);
-const createWriteStream = (path) => fs.createWriteStream(path);
+const bufferToStream = (buffer) => Readable.from(buffer);
 
-module.exports = { pipeStreams, createReadStream, createWriteStream };
+module.exports = { pipeline, streamToBuffer, bufferToStream };
