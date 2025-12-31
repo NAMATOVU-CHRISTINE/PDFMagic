@@ -1,6 +1,6 @@
 # PDF Tools - Free Online PDF Editor
 
-A modern web application for PDF manipulation, similar to iLovePDF. Built with React, TypeScript, and Node.js.
+A modern web application for PDF manipulation. Built with React, TypeScript, and Node.js.
 
 ## Features
 
