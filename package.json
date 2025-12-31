@@ -1,7 +1,7 @@
 {
   "name": "pdf-tools",
   "version": "1.0.0",
-  "description": "PDF manipulation tools like iLovePDF",
+  "description": "Free online PDF manipulation tools",
   "scripts": {
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "dev:client": "cd client && npm run dev",
