@@ -1,5 +1,7 @@
 # PDF Tools - Free Online PDF Editor
 
+🔗 **Live Demo:** [https://pdf-magic-kappa.vercel.app/](https://pdf-magic-kappa.vercel.app/)
+
 A modern web application for PDF manipulation. Built with React, TypeScript, and Node.js.
 
 ## Features
