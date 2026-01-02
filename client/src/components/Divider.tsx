@@ -1,23 +1,20 @@
 import React from 'react';
 
 interface DividerProps {
-  darkMode?: boolean;
-  className?: string;
-  vertical?: boolean;
+  text?: string;
 }
 
-const Divider: React.FC<DividerProps> = ({ 
-  darkMode = false, 
-  className = '',
-  vertical = false 
-}) => {
-  const colorClass = darkMode ? 'bg-gray-700' : 'bg-gray-200';
-  
-  if (vertical) {
-    return <div className={`w-px h-full ${colorClass} ${className}`} />;
+export const Divider: React.FC<DividerProps> = ({ text }) => {
+  if (text) {
+    return (
+      <div className="flex items-center gap-4 my-4">
+        <div className="flex-1 h-px bg-gray-200" />
+        <span className="text-gray-500 text-sm">{text}</span>
+        <div className="flex-1 h-px bg-gray-200" />
+      </div>
+    );
   }
-
-  return <hr className={`border-0 h-px ${colorClass} ${className}`} />;
+  return <hr className="my-4 border-gray-200" />;
 };
 
 export default Divider;
